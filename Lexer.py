@@ -8,6 +8,7 @@ class Lexer:
         self.size = len(self.code)
         self.line: int = 1
         self.position: int = 0
+        self.column = 0
         self.current_char: chr = self.code[0]
         self.SYMBOLS = set("()+-*/%&|!<>\{\}[],.:#=")
         self.ALPHABET = set("qwertyuioplkjhgfdsazxcvbnm")
@@ -22,7 +23,7 @@ class Lexer:
             "elif",
             "else",
             "for",
-            "return"
+            "return",
             "raise",
             "break",
             "continue",
@@ -45,6 +46,7 @@ class Lexer:
 
     def advance(self) -> None:
         self.position += 1
+        self.column += 1
         if self.position < self.size:
             self.current_char = self.code[self.position]
         else:
@@ -54,22 +56,18 @@ class Lexer:
         while self.current_char and self.current_char in [" ", "\n", "\t", "\r"]:
             if self.current_char == "\n":
                 self.line += 1
+                self.column = 0
             self.advance()
 
     def skip_comments(self) -> None:
-        start = self.line, self.position
+        start = self.line, self.column
         self.advance()
         self.advance()
 
         while not (self.current_char == "}" and self.peek() == "#"):
             self.advance()
-
             if self.current_char is None:
-                # TODO: rewrite with errors later
-                print(
-                    f"ERR: Unclosed Comment starting at line: {start[0]}, pos: {start[1]}"
-                )
-                break
+                return Token(TokenType.ERROR, "Unclosed Comment", start[0], start[1])
 
         self.advance()
         self.advance()
@@ -80,7 +78,7 @@ class Lexer:
         return None
 
     def make_number(self) -> float | int:
-        start = self.line, self.position
+        start = self.line, self.column
         decimal_count = 0
         number = ""
         while self.current_char and (
@@ -94,19 +92,17 @@ class Lexer:
                     return token
 
                 if decimal_count > 1:
-                    # TODO: rewrite this with handling when you make errors
-                    print(
-                        f"ERR: Too many decimals at line: {self.line}, pos: {self.position}"
-                    )
-                    return None
+                    # Too many nonsuccessive decimals
+                    return Token(TokenType.ERROR, "Too many decimals", self.line, self.column)
+
             number += self.current_char
             self.advance()
 
         number = float(number) if decimal_count == 1 else int(number)
         return Token(TokenType.NUMBER, number, start[0], start[1])
 
-    def make_range(self):
-        start = self.line, self.position
+    def make_range(self) -> Token | list[Token]:
+        start = self.line, self.column
         decimal_count = 0
 
         while self.current_char == ".":
@@ -119,24 +115,23 @@ class Lexer:
             if self.current_char == " ":
                 end_of_range = 0
             else:
-                while self.current_char.isDigit():
+                while self.current_char and self.current_char.isdigit():
                     end_of_range += self.current_char
                     self.advance()
-
-            end_of_range = Token(
-                TokenType.NUMBER, int(end_of_range), start[0], start[1] + 3
-            )
-
-            return [range_operator, end_of_range]
-
+            if end_of_range:
+                end_of_range = Token(
+                    TokenType.NUMBER, int(end_of_range), start[0], start[1] + 3
+                )
+                return [range_operator, end_of_range]
+            else:
+                return Token(TokenType.ERROR, "Range Operator Not Closed", start[0], start[1])
         else:
-            # TODO: Handle error too many decimals for iteration
-            print(f"ERR: Too many decimals on line: {start[0]}, pos: {start[1]}")
-            return None
+            # Handles error wrong amount of decimals for iteration
+            return Token(TokenType.ERROR, "Wrong Number of Decimals", start[0], start[1])
 
     def make_name_or_keyword(self):
         word = ""
-        start = self.line, self.position
+        start = self.line, self.column
 
         while self.current_char and (
             self.current_char.isalnum() or self.current_char == "_"
@@ -149,7 +144,7 @@ class Lexer:
         return Token(TokenType.NAME, word, start[0], start[1])
 
     def make_string(self) -> str:
-        start = self.line, self.position
+        start = self.line, self.column
         string = ""
         self.advance()
 
@@ -175,10 +170,8 @@ class Lexer:
                     case "}":
                         string += "}"
                     case _:
-                        # TODO: Raise error
-                        print(
-                            f"ERR: Escape sequence isn't recognized line: {self.line}, pos{self.position - 1}"
-                        )
+                        return Token(TokenType.ERROR, "Invalid Esacape Sequence", self.line, self.column)
+
             else:
                 string += self.current_char
 
@@ -188,13 +181,11 @@ class Lexer:
             self.advance()
             return Token(TokenType.STRING, string, start[0], start[1])
         else:
-            # TODO: Raise erro
-            print(f"ERR: String not closed properly line: {start[0]}, pos: {start[1]}")
-        return None
+            return Token(TokenType.ERROR, "String not closed", start[0], start[1])
 
     # Note finishes on character after symbol
     def make_operator(self) -> Token:
-        start = self.line, self.position
+        start = self.line, self.column
         symbol = self.current_char
         token = None
         match self.current_char:
@@ -292,9 +283,8 @@ class Lexer:
                     symbol += "="
                     self.advance()
                     self.advance()
-                    # TODO: either support this or raise error
-                    print(f"ERR: &= is not currently support. line: {start[0]}")
-                    return None
+                    # Bitwise operations not support as of April 6, 2025
+                    return Token(TokenType.ERROR, "Bitwise operations not supported", start[0], start[1])
                 token = Token(TokenType.OPERATOR, symbol, start[0], start[1])
             case ".":
                 # ... or error if true, else ".". if error it's handled in make_range() function
@@ -306,10 +296,7 @@ class Lexer:
                 if self.current_char in {"(", ")", "[", "]", "{", "}", ",", ".", ":"}:
                     token = Token(TokenType.OPERATOR, symbol, start[0], start[1])
                 else:
-                    # TODO: raise ERR
-                    print(f"ERR: Invalid symbol on line: {start[0]}, pos: {start[1]}")
-                    self.advance()
-                    return None
+                    return Token(TokenType.ERROR, "Operator Not Recognized", start[0], start[1])
         self.advance()
         return token
 
@@ -321,8 +308,7 @@ class Lexer:
             if self.current_char in self.SKIPABLE:
                 self.skip_whitespace()
             elif self.current_char == "#" and self.peek() == "{":
-                self.skip_comments()
-
+                token = self.skip_comments()
             if self.current_char in self.ALPHABET:
                 token = self.make_name_or_keyword()
             elif self.current_char in self.NUMBERS:
@@ -332,19 +318,20 @@ class Lexer:
             elif self.current_char in self.SYMBOLS:
                 token = self.make_operator()
             elif self.current_char is None:
-                eof = Token(TokenType.EOF, "", self.line, self.position + 1)
+                eof = Token(TokenType.EOF, "", self.line, self.column + 1)
                 tokens.append(eof)
                 return tokens
             else:
-                # TODO: Raise error when implemented
-                print(f"ERR: Unknown token on line: {self.line}, pos: {self.position}")
-                return None
+                # Unknown character
+                token = Token(TokenType.ERROR, "Unknown Character", self.line, self.column)
 
             if type(token) is list:
                 tokens.extend(token)
-            else:
+            elif type(token) is Token:
                 tokens.append(token)
+            else:
+                continue
 
-        eof = Token(TokenType.EOF, "", self.line, self.position + 1)
+        eof = Token(TokenType.EOF, "", self.line, self.column + 1)
         tokens.append(eof)
         return tokens
