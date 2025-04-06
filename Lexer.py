@@ -10,6 +10,9 @@ class Lexer:
         self.position: int = 0
         self.current_char: chr = self.code[0]
         self.SYMBOLS = set("()+-*/%&|!<>\{\}[],.:#=")
+        self.ALPHABET = set("qwertyuioplkjhgfdsazxcvbnm")
+        self.NUMBERS = set("1234567890")
+        self.SKIPABLE = set([" ", "\n", "\t", "\r"])
         self.KEYWORDS = {
             "fn",
             "class",
@@ -17,8 +20,9 @@ class Lexer:
             "export",
             "if",
             "elif",
-            "elsefor",
-            "return",
+            "else",
+            "for",
+            "return"
             "raise",
             "break",
             "continue",
@@ -34,6 +38,9 @@ class Lexer:
             "false",
             "and",
             "or",
+            "from",
+            "given",
+            "by",
         }
 
     def advance(self) -> None:
@@ -44,7 +51,7 @@ class Lexer:
             self.current_char = None
 
     def skip_whitespace(self) -> None:
-        while self.current_char in [" ", "\n", "\t", "\r"]:
+        while self.current_char and self.current_char in [" ", "\n", "\t", "\r"]:
             if self.current_char == "\n":
                 self.line += 1
             self.advance()
@@ -76,10 +83,15 @@ class Lexer:
         start = self.line, self.position
         decimal_count = 0
         number = ""
-
-        while self.current_char.isdigit() or self.current_char == ".":
+        while self.current_char and (
+            self.current_char == "." or self.current_char.isdigit()
+        ):
             if self.current_char == ".":
                 decimal_count += 1
+                # Case where either a loop is detected or too many decimals
+                if self.peek() == ".":
+                    token = Token(TokenType.NUMBER, int(number), start[0], start[1])
+                    return token
 
                 if decimal_count > 1:
                     # TODO: rewrite this with handling when you make errors
@@ -92,6 +104,35 @@ class Lexer:
 
         number = float(number) if decimal_count == 1 else int(number)
         return Token(TokenType.NUMBER, number, start[0], start[1])
+
+    def make_range(self):
+        start = self.line, self.position
+        decimal_count = 0
+
+        while self.current_char == ".":
+            decimal_count += 1
+            self.advance()
+
+        if decimal_count == 3:
+            range_operator = Token(TokenType.OPERATOR, "...", start[0], start[1])
+            end_of_range = ""
+            if self.current_char == " ":
+                end_of_range = 0
+            else:
+                while self.current_char.isDigit():
+                    end_of_range += self.current_char
+                    self.advance()
+
+            end_of_range = Token(
+                TokenType.NUMBER, int(end_of_range), start[0], start[1] + 3
+            )
+
+            return [range_operator, end_of_range]
+
+        else:
+            # TODO: Handle error too many decimals for iteration
+            print(f"ERR: Too many decimals on line: {start[0]}, pos: {start[1]}")
+            return None
 
     def make_name_or_keyword(self):
         word = ""
@@ -152,7 +193,7 @@ class Lexer:
         return None
 
     # Note finishes on character after symbol
-    def make_operator_or_symbol(self) -> Token:
+    def make_operator(self) -> Token:
         start = self.line, self.position
         symbol = self.current_char
         token = None
@@ -222,24 +263,16 @@ class Lexer:
                     self.advance()
                 token = Token(TokenType.OPERATOR, symbol, start[0], start[1])
             case "=":
-                # if false, =
+                # if true ==, else =
                 if self.peek() == "=":
                     symbol += "="
                     self.advance()
-                    # ==| if true else ==
-                    if self.peek() == "|":
-                        symbol += "|"
-                        self.advance()
                 token = Token(TokenType.OPERATOR, symbol, start[0], start[1])
             case "!":
-                # if false, !
+                # if true !=, else !
                 if self.peek() == "=":
                     symbol += "="
                     self.advance()
-                    # !=& if true else !=
-                    if self.peek() == "&":
-                        symbol += "&"
-                        self.advance()
                 token = Token(TokenType.OPERATOR, symbol, start[0], start[1])
             case "<":
                 # <= if true else <
@@ -254,20 +287,19 @@ class Lexer:
                     self.advance()
                 token = Token(TokenType.OPERATOR, symbol, start[0], start[1])
             case "&":
-                # &== if true else &
+                # &= if true else &
                 if self.peek() == "=":
                     symbol += "="
                     self.advance()
-                    if self.peek() == "=":
-                        symbol += "="
-                        self.advance()
-                    else:
-                        # TODO: either support this or raise error
-                        print(
-                            f"ERR: Operator is not currently support. line: {start[0]}, pos: {start[1]}"
-                        )
-                        self.advance()
-                        return None
+                    self.advance()
+                    # TODO: either support this or raise error
+                    print(f"ERR: &= is not currently support. line: {start[0]}")
+                    return None
+                token = Token(TokenType.OPERATOR, symbol, start[0], start[1])
+            case ".":
+                # ... or error if true, else ".". if error it's handled in make_range() function
+                if self.peek() == ".":
+                    return self.make_range()
                 token = Token(TokenType.OPERATOR, symbol, start[0], start[1])
             # catch all for symbols in this list ["(", ")", "[","]", "{", "}", ",", ".", ":"]
             case _:
@@ -282,5 +314,37 @@ class Lexer:
         return token
 
     def tokenize(self) -> list[Token]:
-        pass
-        
+        tokens = []
+        while self.current_char is not None:
+            token = None
+
+            if self.current_char in self.SKIPABLE:
+                self.skip_whitespace()
+            elif self.current_char == "#" and self.peek() == "{":
+                self.skip_comments()
+
+            if self.current_char in self.ALPHABET:
+                token = self.make_name_or_keyword()
+            elif self.current_char in self.NUMBERS:
+                token = self.make_number()
+            elif self.current_char == "'":
+                token = self.make_string()
+            elif self.current_char in self.SYMBOLS:
+                token = self.make_operator()
+            elif self.current_char is None:
+                eof = Token(TokenType.EOF, "", self.line, self.position + 1)
+                tokens.append(eof)
+                return tokens
+            else:
+                # TODO: Raise error when implemented
+                print(f"ERR: Unknown token on line: {self.line}, pos: {self.position}")
+                return None
+
+            if type(token) is list:
+                tokens.extend(token)
+            else:
+                tokens.append(token)
+
+        eof = Token(TokenType.EOF, "", self.line, self.position + 1)
+        tokens.append(eof)
+        return tokens
