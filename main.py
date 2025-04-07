@@ -15,8 +15,14 @@ def main():
 
     # Print all tokens
     # print(tokens)
+    print("\t\b\bTYPE" + "\t\t\b\b" + "value")
+    print("----------------------------------")
     for token in tokens:
-        print(token)
+        beginning = len("TokenType.Operator     ")
+        string =  str(token.token_type)
+        spaces = beginning - len(string)
+        string = string + " "*spaces + str(token.value)
+        print(string)
 
 
 if __name__ == "__main__":
