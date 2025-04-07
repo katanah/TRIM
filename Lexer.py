@@ -23,6 +23,7 @@ class Lexer:
             "elif",
             "else",
             "for",
+            "while",
             "return",
             "raise",
             "break",
@@ -42,6 +43,7 @@ class Lexer:
             "from",
             "where",
             "by",
+            "as",
         }
 
     def advance(self) -> None:
@@ -125,7 +127,7 @@ class Lexer:
                 while self.current_char and self.current_char.isdigit():
                     end_of_range += self.current_char
                     self.advance()
-            
+
             end_of_range = Token(
                 TokenType.NUMBER, int(end_of_range), start[0], end_of_range_column
             )
