@@ -9,7 +9,7 @@ class Lexer:
         self.line: int = 1
         self.position: int = 0
         self.column = 0
-        self.current_char: chr = self.code[0]
+        self.current_char: chr = None if not self.code else self.code[0]
         self.SYMBOLS = set("()+-*/%&|!<>\{\}[],.:#=")
         self.ALPHABET = set("qwertyuioplkjhgfdsazxcvbnm")
         self.NUMBERS = set("1234567890")
@@ -40,7 +40,7 @@ class Lexer:
             "and",
             "or",
             "from",
-            "given",
+            "where",
             "by",
         }
 
@@ -93,7 +93,9 @@ class Lexer:
 
                 if decimal_count > 1:
                     # Too many nonsuccessive decimals
-                    return Token(TokenType.ERROR, "Too many decimals", self.line, self.column)
+                    return Token(
+                        TokenType.ERROR, "Too many decimals", self.line, self.column
+                    )
 
             number += self.current_char
             self.advance()
@@ -112,22 +114,31 @@ class Lexer:
         if decimal_count == 3:
             range_operator = Token(TokenType.OPERATOR, "...", start[0], start[1])
             end_of_range = ""
-            if self.current_char == " ":
+            end_of_range_column = None
+            self.skip_whitespace()
+
+            if not self.current_char.isdigit():
                 end_of_range = 0
+                end_of_range_column = start[1] + 3
             else:
+                end_of_range_column = self.column
                 while self.current_char and self.current_char.isdigit():
                     end_of_range += self.current_char
                     self.advance()
-            if end_of_range:
-                end_of_range = Token(
-                    TokenType.NUMBER, int(end_of_range), start[0], start[1] + 3
-                )
-                return [range_operator, end_of_range]
-            else:
-                return Token(TokenType.ERROR, "Range Operator Not Closed", start[0], start[1])
+            
+            end_of_range = Token(
+                TokenType.NUMBER, int(end_of_range), start[0], end_of_range_column
+            )
+            return [range_operator, end_of_range]
         else:
             # Handles error wrong amount of decimals for iteration
-            return Token(TokenType.ERROR, "Wrong Number of Decimals", start[0], start[1])
+            invalid_operator = "." * decimal_count
+            return Token(
+                TokenType.ERROR,
+                f"Invalid operator: expected '...', found '{invalid_operator}'",
+                start[0],
+                start[1],
+            )
 
     def make_name_or_keyword(self):
         word = ""
@@ -170,7 +181,12 @@ class Lexer:
                     case "}":
                         string += "}"
                     case _:
-                        return Token(TokenType.ERROR, "Invalid Esacape Sequence", self.line, self.column)
+                        return Token(
+                            TokenType.ERROR,
+                            "Invalid Esacape Sequence",
+                            self.line,
+                            self.column,
+                        )
 
             else:
                 string += self.current_char
@@ -284,7 +300,12 @@ class Lexer:
                     self.advance()
                     self.advance()
                     # Bitwise operations not support as of April 6, 2025
-                    return Token(TokenType.ERROR, "Bitwise operations not supported", start[0], start[1])
+                    return Token(
+                        TokenType.ERROR,
+                        "Bitwise operations not supported",
+                        start[0],
+                        start[1],
+                    )
                 token = Token(TokenType.OPERATOR, symbol, start[0], start[1])
             case ".":
                 # ... or error if true, else ".". if error it's handled in make_range() function
@@ -296,7 +317,9 @@ class Lexer:
                 if self.current_char in {"(", ")", "[", "]", "{", "}", ",", ".", ":"}:
                     token = Token(TokenType.OPERATOR, symbol, start[0], start[1])
                 else:
-                    return Token(TokenType.ERROR, "Operator Not Recognized", start[0], start[1])
+                    return Token(
+                        TokenType.ERROR, "Operator Not Recognized", start[0], start[1]
+                    )
         self.advance()
         return token
 
@@ -323,7 +346,9 @@ class Lexer:
                 return tokens
             else:
                 # Unknown character
-                token = Token(TokenType.ERROR, "Unknown Character", self.line, self.column)
+                token = Token(
+                    TokenType.ERROR, "Unknown Character", self.line, self.column
+                )
 
             if type(token) is list:
                 tokens.extend(token)
