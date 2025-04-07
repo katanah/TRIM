@@ -19,8 +19,8 @@ class TokenType(Enum):
     STRING = "STRING"
     NAME = "NAME"
     KEYWORD = "KEYWORD"
-    SYMBOL = "SYMBOL"
+    # SYMBOL = "SYMBOL" Currently unused likely to remove
     OPERATOR = "OPERATOR"
     EOF = "EOF"
-    ERROR = "ERR"
-    UNKNOWN = "UNKW"
+    ERROR = "ERROR"
+    # UNKNOWN = "UNKW" Currently unused likely to remove 
